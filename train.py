@@ -88,7 +88,7 @@ if __name__ == "__main__":
 
     # SPLIT DATA INTO KFOLD
     skf = StratifiedKFold(n_splits=KFOLD)
-    for fold, (_, val_idx) in enumerate(skf.split(X=DF, y =DF['organ']), 1):
+    for fold, (_, val_idx) in enumerate(skf.split(X=DF, y=DF['organ']), 1):
         DF.loc[val_idx, 'fold'] = fold
 
     hists = []
