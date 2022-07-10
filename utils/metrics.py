@@ -7,7 +7,7 @@ from tensorflow.keras.callbacks import Callback
 '''
     METRICS AND LOSS FUNCTIONS
 '''
-def Dice_Coef(spartial_axis = (1,2), smooth=1e-6):
+def Dice_Coef(spartial_axis = (1,2), ignore_empty = True, smooth=1e-6):
     def Dice_Coef(y_true, y_pred):
         y_pred = tf.math.round(y_pred)
         tp = tf.math.reduce_sum(y_true * y_pred, axis=spartial_axis) # calculate True Positive
@@ -15,6 +15,9 @@ def Dice_Coef(spartial_axis = (1,2), smooth=1e-6):
         fp = tf.math.reduce_sum((1 - y_true) * y_pred, axis=spartial_axis) # calculate False Positive 
         numerator = 2 * tp
         denominator = 2 * tp + fn + fp
+        if ignore_empty:
+            non_empty = tf.math.count_nonzero(tf.math.sum(y_true, axis=spartial_axis), dtype=tf.float32) # Ignore if y_true is empty
+            return tf.math.reduce_sum(numerator / (denominator + smooth)) / (non_empty + smooth)
         return tf.math.reduce_mean( (numerator + smooth) / (denominator + smooth) )
     return Dice_Coef
 

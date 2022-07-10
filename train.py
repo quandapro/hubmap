@@ -38,7 +38,7 @@ parser.add_argument("--seed", type=int, help="Seed for random generator", defaul
 parser.add_argument("--csv", type=str, help="Dataframe path", default='data/train.csv')
 parser.add_argument("--trainsize", type=str, help="Training image size", default="1024x1024")
 parser.add_argument("--fold", type=int, help="Number of folds", default=5)
-parser.add_argument("--epoch", type=int, help="Number of epochs", default=20)
+parser.add_argument("--epoch", type=int, help="Number of epochs", default=100)
 args = parser.parse_args()
 
 '''
@@ -55,7 +55,7 @@ MODEL_DESC = args.description
 TRAINING_SIZE = tuple([int(x) for x in args.trainsize.split("x")])
 BATCH_SIZE = args.batch
 KFOLD = args.fold
-NUM_CLASSES = 3
+NUM_CLASSES = 5
 
 TRANSFORM = A.Compose([
     A.RandomCrop(TRAINING_SIZE[0], TRAINING_SIZE[1])
@@ -109,7 +109,7 @@ if __name__ == "__main__":
         train_datagen = DataLoader(train_id, DATAFOLDER, batch_size=BATCH_SIZE, shuffle=True, augment=augment)
         test_datagen = DataLoader(test_id, DATAFOLDER, batch_size=1, shuffle=False, augment=None)
         
-        model = Unet2D(input_shape=(None, None, 3), deep_supervision=True)()
+        model = Unet2D(num_classes=NUM_CLASSES, input_shape=(None, None, 3), deep_supervision=True)()
         monitor = 'val_output_final_Dice_Coef'
         
         optimizer = Adam(learning_rate=initial_lr)
@@ -117,7 +117,7 @@ if __name__ == "__main__":
         model.compile(optimizer=optimizer, loss=bce_dice_loss(spartial_axis=(0, 1, 2)), metrics=[Dice_Coef(spartial_axis=(1, 2))])
         
         callbacks = [
-            CompetitionMetric(test_datagen, f'{MODEL_CHECKPOINTS_FOLDER}/{MODEL_NAME}/{MODEL_DESC}_fold{fold}.h5', period=1, patch_size=TRAINING_SIZE),
+            CompetitionMetric(test_datagen, f'{MODEL_CHECKPOINTS_FOLDER}/{MODEL_NAME}/{MODEL_DESC}_fold{fold}.h5', num_class=NUM_CLASSES, period=5, patch_size=TRAINING_SIZE),
             LearningRateScheduler(schedule=poly_scheduler(initial_lr, no_of_epochs), verbose=1),
             CSVLogger(f'{MODEL_CHECKPOINTS_FOLDER}/{MODEL_NAME}/{MODEL_DESC}_fold{fold}.csv', separator=",", append=False)
         ]

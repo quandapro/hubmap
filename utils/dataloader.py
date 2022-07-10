@@ -40,4 +40,8 @@ class DataLoader(Sequence):
             y.append(mask)
         X = np.asarray(X, dtype='float32')
         y = np.asarray(y, dtype='float32')
+        if len(X.shape) < 4: # Add channel axis if needed
+            X = np.expand_dims(X, axis=-1)
+        if len(y.shape) < 4: # Add channel axis if needed
+            y = np.expand_dims(y, axis=-1)
         return X / 255., y 
