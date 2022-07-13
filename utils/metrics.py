@@ -16,7 +16,7 @@ def Dice_Coef(spartial_axis = (1,2), ignore_empty = True, smooth=1e-6):
         numerator = 2 * tp
         denominator = 2 * tp + fn + fp
         if ignore_empty:
-            non_empty = tf.math.count_nonzero(tf.math.sum(y_true, axis=spartial_axis), dtype=tf.float32) # Ignore if y_true is empty
+            non_empty = tf.math.count_nonzero(tf.math.reduce_sum(y_true, axis=spartial_axis), dtype=tf.float32) # Ignore if y_true is empty
             return tf.math.reduce_sum(numerator / (denominator + smooth)) / (non_empty + smooth)
         return tf.math.reduce_mean( (numerator + smooth) / (denominator + smooth) )
     return Dice_Coef

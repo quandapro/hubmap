@@ -58,7 +58,12 @@ KFOLD = args.fold
 NUM_CLASSES = 5
 
 TRANSFORM = A.Compose([
-    A.RandomCrop(TRAINING_SIZE[0], TRAINING_SIZE[1])
+    A.RandomCrop(TRAINING_SIZE[0], TRAINING_SIZE[1]),
+    A.HorizontalFlip(p=0.5),
+    A.VerticalFlip(p=0.5),
+    A.ShiftScaleRotate(p=0.2, shift_limit=0, scale_limit=(0.85, 1.25), rotate_limit=180),
+    A.GridDistortion(p=0.2),
+    A.RandomGamma(p=0.3, gamma_limit=(70, 150)),
 ])
 
 initial_lr = 3e-4
@@ -117,7 +122,7 @@ if __name__ == "__main__":
         model.compile(optimizer=optimizer, loss=bce_dice_loss(spartial_axis=(0, 1, 2)), metrics=[Dice_Coef(spartial_axis=(1, 2))])
         
         callbacks = [
-            CompetitionMetric(test_datagen, f'{MODEL_CHECKPOINTS_FOLDER}/{MODEL_NAME}/{MODEL_DESC}_fold{fold}.h5', num_class=NUM_CLASSES, period=5, patch_size=TRAINING_SIZE),
+            CompetitionMetric(test_datagen, f'{MODEL_CHECKPOINTS_FOLDER}/{MODEL_NAME}/{MODEL_DESC}_fold{fold}.h5', num_class=NUM_CLASSES, period=10, patch_size=TRAINING_SIZE),
             LearningRateScheduler(schedule=poly_scheduler(initial_lr, no_of_epochs), verbose=1),
             CSVLogger(f'{MODEL_CHECKPOINTS_FOLDER}/{MODEL_NAME}/{MODEL_DESC}_fold{fold}.csv', separator=",", append=False)
         ]

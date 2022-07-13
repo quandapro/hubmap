@@ -91,6 +91,7 @@ class CompetitionMetric(Callback):
             dice_coef = []
             for X, y_true in self.validation_data:
                 non_empty = np.sum(y_true, axis=(0, 1, 2))
+                print(non_empty)
                 non_empty = np.argmax(non_empty)
                 y_pred = self.sliding_window_inference(X)
                 # Thresholding
