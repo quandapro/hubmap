@@ -1,11 +1,12 @@
 import cv2
 import numpy as np
+import tifffile as tiff
 
 '''
     Image helper functions
 ''' 
 def open_image(path):
-    image = cv2.imread(path, -1)
+    image = tiff.imread(path)
     shape = image.shape
     return image, shape
 

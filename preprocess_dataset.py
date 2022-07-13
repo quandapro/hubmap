@@ -31,8 +31,8 @@ if __name__ == '__main__':
         print(f"Processing image id {image_id}")
 
         image, shape = open_image(f"{DATA_FOLDER}/{image_id}.tiff")
-        mask = np.zeros((*shape[:2], len(CLASS_MAP)), dtype='uint8')
-        mask[..., CLASS_MAP[organ]] = rle_decode(mask_rle, shape[:2])
+        mask = np.zeros((*shape[:2], 1), dtype='uint8')
+        mask[..., 0] = rle_decode(mask_rle, shape[:2])
         np.save(f"{OUTPUT_FOLDER}/{image_id}.npy", image)
         np.save(f"{OUTPUT_FOLDER}/{image_id}_mask.npy", mask)
     

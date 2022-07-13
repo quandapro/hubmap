@@ -55,7 +55,7 @@ MODEL_DESC = args.description
 TRAINING_SIZE = tuple([int(x) for x in args.trainsize.split("x")])
 BATCH_SIZE = args.batch
 KFOLD = args.fold
-NUM_CLASSES = 5
+NUM_CLASSES = 1
 
 TRANSFORM = A.Compose([
     A.RandomCrop(TRAINING_SIZE[0], TRAINING_SIZE[1]),
