@@ -38,7 +38,7 @@ parser.add_argument("--seed", type=int, help="Seed for random generator", defaul
 parser.add_argument("--csv", type=str, help="Dataframe path", default='data/train.csv')
 parser.add_argument("--trainsize", type=str, help="Training image size", default="512x512")
 parser.add_argument("--fold", type=int, help="Number of folds", default=5)
-parser.add_argument("--epoch", type=int, help="Number of epochs", default=200)
+parser.add_argument("--epoch", type=int, help="Number of epochs", default=300)
 args = parser.parse_args()
 
 '''
@@ -55,15 +55,28 @@ MODEL_DESC = args.description
 TRAINING_SIZE = tuple([int(x) for x in args.trainsize.split("x")])
 BATCH_SIZE = args.batch
 KFOLD = args.fold
-NUM_CLASSES = 1
+NUM_CLASSES = 5
 
 TRANSFORM = A.Compose([
-    A.HorizontalFlip(p=0.5),
-    A.VerticalFlip(p=0.5),
-    A.ShiftScaleRotate(p=0.2, shift_limit=0, scale_limit=(0.85, 1.25), rotate_limit=180),
-    A.GridDistortion(p=0.2),
-    A.RandomGamma(p=0.3, gamma_limit=(70, 150)),
-])
+    A.HorizontalFlip(),
+    A.VerticalFlip(),
+    A.RandomRotate90(),
+    A.ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.2, rotate_limit=15, p=0.9,
+                        border_mode=cv2.BORDER_REFLECT),
+    A.OneOf([
+        A.ElasticTransform(p=.3),
+        A.GaussianBlur(p=.3),
+        A.GaussNoise(p=.3),
+        A.OpticalDistortion(p=0.3),
+        A.GridDistortion(p=.1),
+    ], p=0.3),
+    A.OneOf([
+        A.HueSaturationValue(15,25,0),
+        A.CLAHE(clip_limit=2),
+        A.RandomBrightnessContrast(brightness_limit=0.3, contrast_limit=0.3),
+    ], p=0.3),
+    A.Cutout(max_h_size=64, max_w_size=64, num_holes=8, p=.3)
+], p=1.0)
 
 VALID_TRANSFORM = A.Compose([
 
@@ -131,7 +144,7 @@ if __name__ == "__main__":
         model.compile(optimizer=optimizer, loss=bce_dice_loss(spartial_axis=(0, 1, 2)), metrics=[Dice_Coef(spartial_axis=(1, 2))])
         
         callbacks = [
-            ModelCheckpoint(f'{MODEL_CHECKPOINTS_FOLDER}/{MODEL_NAME}/{MODEL_DESC}_fold{fold}.h5', monitor='val_output_final_Dice_Coef', mode='max', save_best_only=True, verbose=1),
+            ModelCheckpoint(f'{MODEL_CHECKPOINTS_FOLDER}/{MODEL_NAME}/{MODEL_DESC}_fold{fold}.h5', monitor='val_output_final_Dice_Coef', mode='max', save_weights_only=True, save_best_only=True, verbose=1),
             LearningRateScheduler(schedule=poly_scheduler(initial_lr, no_of_epochs), verbose=1),
             CSVLogger(f'{MODEL_CHECKPOINTS_FOLDER}/{MODEL_NAME}/{MODEL_DESC}_fold{fold}.csv', separator=",", append=False)
         ]
@@ -146,7 +159,7 @@ if __name__ == "__main__":
     val_Dice_Coef = []
 
     for i in range(1, KFOLD + 1):
-        val_Dice_Coef.append(hists[i - 1]['val_output_final_Dice_Coef'])
+        val_Dice_Coef.append(np.max(hists[i - 1]['val_output_final_Dice_Coef']))
 
     print(val_Dice_Coef)
     print(f"{np.mean(val_Dice_Coef)} +- {np.std(val_Dice_Coef)}")

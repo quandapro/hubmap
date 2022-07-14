@@ -1,8 +1,12 @@
 import numpy as np
+import glob
+import os
 from tensorflow.keras.utils import Sequence
 
 class DataLoader(Sequence):
     def __init__(self, train_ids, datafolder, batch_size, shuffle, augment):
+        # train_ids = [str(x) for x in train_ids]
+        # train_ids = self.get_id_from_folder(datafolder, train_ids)
         self.train_ids = train_ids
         self.datafolder = datafolder
         self.batch_size = batch_size 
@@ -12,6 +16,13 @@ class DataLoader(Sequence):
         self.indices = indices
         self.augment = augment
         self.shuffle = shuffle
+
+    def get_id_from_folder(self, datafolder, train_ids):
+        image_files = os.listdir(datafolder)
+        image_files = [x for x in image_files if 'mask' not in x]
+        image_ids = [x.split('.')[0] for x in image_files]
+        image_ids = [x for x in image_ids if x.split("_")[0] in train_ids]
+        return image_ids
         
     def load_data(self, train_id):
         X = np.load(f"{self.datafolder}/{train_id}.npy")

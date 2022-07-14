@@ -32,8 +32,8 @@ if __name__ == '__main__':
         print(f"Processing image id {image_id}")
 
         image, shape = open_image(f"{DATA_FOLDER}/{image_id}.tiff")
-        mask = np.zeros((*shape[:2], 1), dtype='uint8')
-        mask[..., 0] = rle_decode(mask_rle, shape[:2])
+        mask = np.zeros((*shape[:2], len(CLASS_MAP)), dtype='uint8')
+        mask[..., CLASS_MAP[organ]] = rle_decode(mask_rle, shape[:2])
 
         image = cv2.resize(image, IMAGE_SIZE, cv2.INTER_AREA)
         mask = cv2.resize(mask, IMAGE_SIZE, cv2.INTER_NEAREST)
