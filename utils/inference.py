@@ -5,10 +5,10 @@ import tqdm
 from tensorflow.keras.callbacks import Callback
 import tensorflow as tf
 
-def dice_coef_numpy(y_true, y_pred, smooth = 1e-6):
-    tp = np.sum(y_true * y_pred) # calculate True Positive
-    fn = np.sum(y_true * (1 - y_pred)) # calculate False Negative
-    fp = np.sum((1 - y_true) * y_pred) # calculate False Positive
+def dice_coef_numpy(y_true, y_pred, axis=None, smooth = 1e-6):
+    tp = np.sum(y_true * y_pred, axis=axis) # calculate True Positive
+    fn = np.sum(y_true * (1 - y_pred), axis=axis) # calculate False Negative
+    fp = np.sum((1 - y_true) * y_pred, axis=axis) # calculate False Positive
     numerator = 2 * tp + smooth
     denominator = 2 * tp + fn + fp + smooth
     return np.mean(numerator / denominator)
@@ -71,7 +71,7 @@ class CompetitionMetric(Callback):
         for i, (x, y) in enumerate(starting_points):
             patches[i] = volume[:, x:x + w_h, y:y + w_w, :]
 
-        y_pred = self.model.predict(patches, batch_size = 8)
+        y_pred = self.model.predict(patches, batch_size = 16)
         if self.deep_supervision:
             y_pred = y_pred[-1]
         
@@ -95,7 +95,7 @@ class CompetitionMetric(Callback):
                 y_pred = self.sliding_window_inference(X)
                 # Thresholding
                 y_pred = (y_pred > 0.5).astype('float32')
-                dice_coef.append(dice_coef_numpy(y_true[..., non_empty], y_pred[..., non_empty]))
+                dice_coef.append(dice_coef_numpy(y_true[..., non_empty], y_pred[..., non_empty], axis=(1, 2)))
 
             mean_dice_coef = np.mean(dice_coef)
 

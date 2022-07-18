@@ -25,6 +25,7 @@ from utils.dataloader import DataLoader
 from utils.inference import CompetitionMetric
 from utils.utils import *
 from models.unet import Unet2D
+import segmentation_models as sm
 
 '''
     PARSE ARGUMENTS
@@ -38,7 +39,7 @@ parser.add_argument("--seed", type=int, help="Seed for random generator", defaul
 parser.add_argument("--csv", type=str, help="Dataframe path", default='data/train.csv')
 parser.add_argument("--trainsize", type=str, help="Training image size", default="512x512")
 parser.add_argument("--fold", type=int, help="Number of folds", default=5)
-parser.add_argument("--epoch", type=int, help="Number of epochs", default=300)
+parser.add_argument("--epoch", type=int, help="Number of epochs", default=100)
 args = parser.parse_args()
 
 '''
@@ -74,15 +75,15 @@ TRANSFORM = A.Compose([
         A.HueSaturationValue(15,25,0),
         A.CLAHE(clip_limit=2),
         A.RandomBrightnessContrast(brightness_limit=0.3, contrast_limit=0.3),
-    ], p=0.3),
-    A.Cutout(max_h_size=64, max_w_size=64, num_holes=8, p=.3)
+    ], p=0.3)
 ], p=1.0)
 
 VALID_TRANSFORM = A.Compose([
 
 ])
 
-initial_lr = 3e-4
+initial_lr = 1e-3
+min_lr = 1e-5
 no_of_epochs = args.epoch
 
 def augment(X, y):
@@ -134,18 +135,22 @@ if __name__ == "__main__":
         train_id, test_id = DF["id"][DF["fold"] != fold].values, DF["id"][DF["fold"] == fold].values
 
         train_datagen = DataLoader(train_id, DATAFOLDER, batch_size=BATCH_SIZE, shuffle=True, augment=augment)
-        test_datagen = DataLoader(test_id, DATAFOLDER, batch_size=1, shuffle=False, augment=None)
+        test_datagen = DataLoader(test_id, DATAFOLDER, batch_size=BATCH_SIZE, shuffle=False, augment=None)
         
-        model = Unet2D(num_classes=NUM_CLASSES, input_shape=(None, None, 3), deep_supervision=True)()
-        monitor = 'val_output_final_Dice_Coef'
+        if MODEL_NAME == "unet2d_ds":
+            model = Unet2D(num_classes=NUM_CLASSES, input_shape=(None, None, 3), deep_supervision=True)()
+            monitor = 'val_output_final_Dice_Coef'
+        else:
+            model = sm.Unet(MODEL_NAME, input_shape=(None, None, 3), classes=NUM_CLASSES, encoder_weights='imagenet', activation='sigmoid')
+            monitor = 'val_Dice_Coef'
         
         optimizer = Adam(learning_rate=initial_lr)
 
-        model.compile(optimizer=optimizer, loss=bce_dice_loss(spartial_axis=(0, 1, 2)), metrics=[Dice_Coef(spartial_axis=(1, 2))])
+        model.compile(optimizer=optimizer, loss=bce_dice_loss(spartial_axis=(1, 2)), metrics=[Dice_Coef(spartial_axis=(1, 2))])
         
         callbacks = [
-            ModelCheckpoint(f'{MODEL_CHECKPOINTS_FOLDER}/{MODEL_NAME}/{MODEL_DESC}_fold{fold}.h5', monitor='val_output_final_Dice_Coef', mode='max', save_weights_only=True, save_best_only=True, verbose=1),
-            LearningRateScheduler(schedule=poly_scheduler(initial_lr, no_of_epochs), verbose=1),
+            ModelCheckpoint(f'{MODEL_CHECKPOINTS_FOLDER}/{MODEL_NAME}/{MODEL_DESC}_fold{fold}.h5', monitor=monitor, mode='max', save_weights_only=True, save_best_only=True, verbose=1),
+            LearningRateScheduler(schedule=cosine_scheduler(initial_lr, min_lr, no_of_epochs), verbose=1),
             CSVLogger(f'{MODEL_CHECKPOINTS_FOLDER}/{MODEL_NAME}/{MODEL_DESC}_fold{fold}.csv', separator=",", append=False)
         ]
         hist = model.fit_generator(train_datagen, 
@@ -159,7 +164,7 @@ if __name__ == "__main__":
     val_Dice_Coef = []
 
     for i in range(1, KFOLD + 1):
-        val_Dice_Coef.append(np.max(hists[i - 1]['val_output_final_Dice_Coef']))
+        val_Dice_Coef.append(np.max(hists[i - 1][monitor]))
 
     print(val_Dice_Coef)
     print(f"{np.mean(val_Dice_Coef)} +- {np.std(val_Dice_Coef)}")
