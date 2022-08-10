@@ -9,9 +9,9 @@ from utils.image import *
 """
     CONFIGURATION
 """
-DATA_FOLDER = "./data/train_images"
-DF = pd.read_csv("./data/train.csv")
-OUTPUT_FOLDER = "./data/npy"
+DATA_FOLDER = "../data/train_images"
+DF = pd.read_csv("../data/train.csv")
+OUTPUT_FOLDER = "../data/npy"
 
 CLASS_MAP = {'kidney' : 0,
              'largeintestine' : 1,
