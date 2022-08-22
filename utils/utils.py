@@ -12,9 +12,9 @@ def seed_everything(seed):
     np.random.seed(seed)
     tf.random.set_seed(seed)
 
-def poly_scheduler(initial_lr, no_of_epochs, exponent = 0.9):
+def poly_scheduler(initial_lr, min_lr, no_of_epochs, exponent = 0.9):
     def scheduler(epoch, lr):
-        return initial_lr * (1 - epoch / no_of_epochs)**exponent
+        return max(initial_lr * (1 - epoch / no_of_epochs)**exponent, min_lr)
     return scheduler
 
 def cosine_scheduler(initial_lr, min_lr, epochs_per_cycle):

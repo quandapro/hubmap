@@ -66,9 +66,9 @@ class MultiHeadSelfAttention(Layer):
         super().__init__(**kwargs)
         self.num_heads = num_heads
         self.dims = dims
-        self.query = Dense(dims, name="query") # B x N_q x C 
-        self.key   = Dense(dims, name="key")   # B x N_k x C
-        self.value = Dense(dims, name="value") # B x N_k x C
+        self.query = Dense(dims, name="query")
+        self.key   = Dense(dims, name="key")
+        self.value = Dense(dims, name="value")
         self.proj  = Dense(dims, name="proj")
         self.sr_ratio = sr
         self.dropout = Dropout(dropout_ratio)
@@ -103,8 +103,8 @@ class MultiHeadSelfAttention(Layer):
         heads = []
         for i in range(self.num_heads):
             q, k, v = query[..., i], key[..., i], value[..., i]
-            scores  = tf.matmul(q, k, transpose_b=True) / (head_dims ** 0.5)
-            weights = tf.nn.softmax(scores, axis=-1)    
+            scores  = tf.matmul(q, k, transpose_b=True) / (head_dims ** 0.5) # W: N x N_k, v: N_k x C
+            weights = tf.nn.softmax(scores, axis=-1)    # W = N x C; v = C x C
             weights = self.dropout(weights)
             
             head    = tf.matmul(weights, v)

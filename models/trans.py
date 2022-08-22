@@ -15,7 +15,9 @@ class TranSeg:
                  encoder_num_heads=[1, 2, 4, 8],
                  encoder_dims=[64, 128, 320, 512],
                  encoder_depth=[2, 2, 2, 2],
-                 dropout=0.0,
+                 hidden_dropout=0.0,
+                 attention_dropout=0.0,
+                 drop_path=0.0,
                  decoder_dim=768,
                  patch_size = [7, 3, 3, 3],
                  stride = [4, 2, 2, 2],
@@ -26,14 +28,16 @@ class TranSeg:
         self.encoder_num_heads = encoder_num_heads
         self.encoder_dims = encoder_dims
         self.encoder_depth = encoder_depth
-        self.dropout=dropout
+        self.hidden_dropout = hidden_dropout
+        self.attention_dropout=attention_dropout
+        self.drop_path = drop_path
         self.decoder_dim = decoder_dim
         self.patch_size = patch_size
         self.stride = stride
         self.sr = sr
         self.activation = activation
 
-    def encoder_block(self, inp, patch_size, stride, num_heads, kernels, depth, sr, dropout_rate):
+    def encoder_block(self, inp, patch_size, stride, num_heads, kernels, depth, sr):
         # Linear convolution embedding
         x, H, W = OverlapPatchEmbeddings(patch_size=patch_size,
                                          stride=stride,
@@ -44,7 +48,10 @@ class TranSeg:
             x = LayerNormalization(epsilon=1e-6)(x)
             x = MultiHeadSelfAttention(num_heads=num_heads,
                                        dims=kernels,
-                                       sr=sr)(x, H, W)
+                                       sr=sr,
+                                       dropout_ratio=self.attention_dropout)(x, H, W)
+            if self.drop_path > 0:
+                x = DropPath(self.drop_path)(x)
             x = Add()([shortcuts, x])
             
             # MLP and skip conn
@@ -52,7 +59,9 @@ class TranSeg:
             x = LayerNormalization(epsilon=1e-6)(x)
             x = MLP(dims=kernels,
                     mlp_ratio=4,
-                    dropout_ratio=dropout_rate)(x, H, W)
+                    dropout_ratio=self.hidden_dropout)(x, H, W)
+            if self.drop_path > 0:
+                x = DropPath(self.drop_path)(x)
             x = Add()([shortcuts, x])
 
         # Reshape x
@@ -86,6 +95,22 @@ class TranSeg:
         x    = ReLU()(x)
         return x
 
+    def decoder_unet(self, inp, dims):
+        num_blocks = len(inp)
+        x = inp[0]
+        for i in range(num_blocks - 1):
+            skip_conn = inp[i + 1]
+            reshape = tf.shape(skip_conn)
+            x = tf.image.resize(x, reshape[1:3])
+            x = Concatenate(axis=-1)([x, inp[i + 1]])
+            B, H, W, C = tf.shape(x)
+            x = tf.reshape(x, (B, -1, C))
+            x = Dense(dims[i + 1])(x)
+            x = tf.reshape(x, (B, H, W, dims[i + 1]))
+            x = gelu(x)
+            x = LayerNormalization()(x)
+        return x
+
     def __call__(self):       
         inp = Input(self.input_shape)
 
@@ -103,13 +128,13 @@ class TranSeg:
                                    num_heads=self.encoder_num_heads[i], 
                                    kernels=self.encoder_dims[i], 
                                    depth=self.encoder_depth[i], 
-                                   sr = self.sr[i],
-                                   dropout_rate=self.dropout)
+                                   sr = self.sr[i])
             x = LayerNormalization(epsilon=1e-6)(x)
             encoder_blocks.append(x)
 
         # Decoder
-        out = self.decoder(encoder_blocks, self.decoder_dim)
+        # out = self.decoder(encoder_blocks, self.decoder_dim)
+        out = self.decoder_unet(encoder_blocks, self.encoder_dims[:-1])
             
         # Final output
         out = Conv2D(self.num_classes, 

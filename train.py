@@ -95,8 +95,8 @@ CLASS_MAP = {'kidney' : 1,
              'prostate' : 4,
              'spleen' : 5}
 
-initial_lr = 1e-4
-# min_lr = 1e-5
+initial_lr = 1e-3
+min_lr = 1e-5
 no_of_epochs = args.epoch
 
 def augment(X, y):
@@ -169,7 +169,9 @@ if __name__ == "__main__":
                             encoder_num_heads=[1, 2, 5, 8],
                             encoder_dims=[64, 128, 320, 512],
                             encoder_depth=[2, 2, 2, 2],
-                            dropout=0.0,
+                            hidden_dropout=0.0,
+                            attention_dropout=0.0,
+                            drop_path=0.0,
                             decoder_dim=768,
                             patch_size = [7, 3, 3, 3],
                             stride = [4, 2, 2, 2],
@@ -198,7 +200,7 @@ if __name__ == "__main__":
 
             callbacks = [
                 CustomModelCheckpoint(f'{MODEL_CHECKPOINTS_FOLDER}/{MODEL_NAME}/{MODEL_DESC}_fold{fold}.h5', monitor=monitor, is_segformer=(MODEL_NAME == 'segformer'), save_best_only=True),
-                # LearningRateScheduler(schedule=poly_scheduler(initial_lr, no_of_epochs), verbose=1),
+                LearningRateScheduler(schedule=poly_scheduler(initial_lr, min_lr, no_of_epochs), verbose=1),
                 CSVLogger(f'{MODEL_CHECKPOINTS_FOLDER}/{MODEL_NAME}/{MODEL_DESC}_fold{fold}.csv', separator=",", append=False)
             ]
 
@@ -213,7 +215,7 @@ if __name__ == "__main__":
 
             callbacks = [
                 CustomModelCheckpoint(f'{MODEL_CHECKPOINTS_FOLDER}/{MODEL_NAME}/{MODEL_DESC}.h5', monitor=monitor, is_segformer=(MODEL_NAME == 'segformer'), save_best_only=False),
-                LearningRateScheduler(schedule=poly_scheduler(initial_lr, no_of_epochs), verbose=1),
+                LearningRateScheduler(schedule=poly_scheduler(initial_lr, min_lr, no_of_epochs), verbose=1),
                 CSVLogger(f'{MODEL_CHECKPOINTS_FOLDER}/{MODEL_NAME}/{MODEL_DESC}_fold{fold}.csv', separator=",", append=False)
             ]
             hist = model.fit_generator(train_datagen, 
