@@ -3,10 +3,11 @@ from tensorflow.keras.layers import *
 from tensorflow.keras.models import *
 import tensorflow.keras.backend as K
 from tensorflow.keras.activations import *
+from .layers import *
 import gc
 
 '''
-    BASELINE 2D-UNET WITH DEEP SUPERVISION
+    SEGFORMER
 '''
 class TranSeg:
     def __init__(self, num_classes = 1, 
@@ -32,115 +33,30 @@ class TranSeg:
         self.sr = sr
         self.activation = activation
 
-    def mlp(self, inp, dims, dropout_rate, H, W):
-        '''
-            Multi layer perceptron 
-            Dense -> DWConv -> Dense
-        '''
-        x = inp
-        x = Dense(dims * 4)(x)
-        x = BatchNormalization()(x)
-
-        B, N, C = tf.shape(x)
-        x = tf.reshape(x, (B, H, W, C))
-        x = DepthwiseConv2D(kernel_size=3, 
-                            strides=(1, 1), 
-                            padding='same')(x)
-        B, H, W, C = tf.shape(x)
-        x = tf.reshape(x, (B, H * W, C))
-        x = BatchNormalization()(x)
-        x = ReLU()(x)
-        x = Dropout(dropout_rate)(x)
-
-        x = Dense(dims)(x)
-        x = Dropout(dropout_rate)(x)
-        x = BatchNormalization()(x)
-        return x
-
-    def multi_head_attention(self, query, key, dims, num_heads, dropout_rate):
-        B, N_q, _ = tf.shape(query)
-        B, N_k, _ = tf.shape(key)
-
-        kv = key
-
-        query = Dense(dims, use_bias=False)(query)
-        query = BatchNormalization()(query)
-        query = tf.reshape(query, (B, N_q, dims // num_heads, num_heads))
-
-        key   = Dense(dims, use_bias=False)(kv)
-        key   = BatchNormalization()(key)
-        key   = tf.reshape(key, (B, N_k, dims // num_heads, num_heads))
-
-        value = Dense(dims, use_bias=False)(kv)
-        value = BatchNormalization()(value)
-        value = tf.reshape(value, (B, N_k, dims // num_heads, num_heads))
-
-        heads = []
-        for i in range(num_heads):
-            q, k, v = query[..., i], key[..., i], value[..., i]
-            attn  = tf.matmul(q, k, transpose_b = True) 
-            attn  = BatchNormalization()(attn)
-            attn  = K.softmax(attn)
-
-            x     = tf.matmul(attn, v) 
-            x     = BatchNormalization()(x)
-            heads.append(x)
-
-        # Concatenate heads
-        x     = Concatenate(axis=-1)(heads)
-        x     = BatchNormalization()(x)
-        x     = tf.reshape(x, (B, N_q, dims))
-
-        # Linear projection
-        x     = Dense(dims)(x)
-        x     = BatchNormalization()(x)
-        return x
-
-
     def encoder_block(self, inp, patch_size, stride, num_heads, kernels, depth, sr, dropout_rate):
-        x = inp
         # Linear convolution embedding
-        x = Conv2D(kernels, 
-                kernel_size = patch_size,
-                padding = 'same',
-                strides = stride)(x)
-        x = BatchNormalization()(x)
-
-        # Get h, w
-        b, h, w, c = tf.shape(x)
-        # Flatten x
-        x = tf.reshape(x, (b, h * w, c))
+        x, H, W = OverlapPatchEmbeddings(patch_size=patch_size,
+                                         stride=stride,
+                                         dims=kernels)(inp)
         for i in range(depth):
             # Multi Head Attention and skip conn
             shortcuts = x
-            x_ = x
-            if sr > 1:
-                x_ = Conv2D(kernels, 
-                            kernel_size = sr,
-                            padding = 'same',
-                            strides = sr)(tf.reshape(x_, (b, h, w, c)))
-                x_ = BatchNormalization()(x_)
-                b_, h_, w_, c_ = tf.shape(x_)
-                x_ = tf.reshape(x_, (b_, h_ * w_, c_))
-
-            x = self.multi_head_attention(query=x, 
-                                          key=x_, 
-                                          dims=kernels, 
-                                          num_heads=num_heads, 
-                                          dropout_rate=dropout_rate)
-
+            x = LayerNormalization(epsilon=1e-6)(x)
+            x = MultiHeadSelfAttention(num_heads=num_heads,
+                                       dims=kernels,
+                                       sr=sr)(x, H, W)
             x = Add()([shortcuts, x])
-            x = BatchNormalization()(x)
             
-
             # MLP and skip conn
             shortcuts = x
-            x = self.mlp(x, kernels, dropout_rate=dropout_rate, H=h, W=w)
+            x = LayerNormalization(epsilon=1e-6)(x)
+            x = MLP(dims=kernels,
+                    mlp_ratio=4,
+                    dropout_ratio=dropout_rate)(x, H, W)
             x = Add()([shortcuts, x])
-            x = BatchNormalization()(x)
 
         # Reshape x
-        x = tf.reshape(x, (b, h, w, c))
+        x = tf.reshape(x, (-1, H, W, kernels))
             
         return x
 
@@ -148,14 +64,12 @@ class TranSeg:
         fuse = []
         _, H, W, _ = tf.shape(inp[0])
         for i in range(len(inp)):
-            # Normalize input and reshape
             x = inp[i]
             b, h, w, c = tf.shape(x)
             x = tf.reshape(x, (b, h*w, c))
 
             # Mlp
             x = Dense(dim)(x)
-            x = BatchNormalization()(x)
             x = tf.reshape(x, (b, h, w, dim))
 
             # UpSampling
@@ -164,11 +78,11 @@ class TranSeg:
             fuse.append(x)
 
         # Linear fuse
-        fuse = Concatenate(axis=-1)(fuse)
-        fuse = BatchNormalization()(fuse)
-
-        x    = Conv2D(dim, kernel_size=1)(fuse)
-        x    = BatchNormalization()(x)
+        x    = Concatenate(axis=-1)(fuse)
+        x    = Conv2D(dim,
+                      kernel_size = (1, 1), 
+                      padding = 'same')(x)
+        x    = BatchNormalization(epsilon=1e-6)(x)
         x    = ReLU()(x)
         return x
 
@@ -179,7 +93,7 @@ class TranSeg:
 
         encoder_blocks = []
 
-        x = BatchNormalization()(inp)
+        x = inp
 
         # Encoder
         for i in range(len(self.encoder_num_heads)):
@@ -191,6 +105,7 @@ class TranSeg:
                                    depth=self.encoder_depth[i], 
                                    sr = self.sr[i],
                                    dropout_rate=self.dropout)
+            x = LayerNormalization(epsilon=1e-6)(x)
             encoder_blocks.append(x)
 
         # Decoder
