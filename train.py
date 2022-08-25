@@ -37,6 +37,7 @@ from transformers import TFSegformerForSemanticSegmentation, SegformerConfig
 parser = argparse.ArgumentParser()
 parser.add_argument("--backbone", type=str, help="Unet backbone", default="unet2d_ds")
 parser.add_argument("--description", type=str, help="Model description", default="resize_baseline")
+parser.add_argument("--pretrained", type=str, help="Pretrained weights path", default="")
 parser.add_argument("--batch", type=int, help="Batch size", default=16)
 parser.add_argument("--datafolder", type=str, help="Data folder", default='data/npy_768x768')
 parser.add_argument("--seed", type=int, help="Seed for random generator", default=2022)
@@ -57,6 +58,7 @@ DF = pd.read_csv(args.csv)
 MODEL_CHECKPOINTS_FOLDER = './model_checkpoint/'
 MODEL_NAME = args.backbone
 MODEL_DESC = args.description
+MODEL_PRETRAINED_WEIGHTS = args.pretrained
 
 TRAINING_SIZE = tuple([int(x) for x in args.trainsize.split("x")])
 BATCH_SIZE = args.batch
@@ -95,8 +97,8 @@ CLASS_MAP = {'kidney' : 1,
              'prostate' : 4,
              'spleen' : 5}
 
-initial_lr = 1e-3
-min_lr = 1e-5
+initial_lr = 1e-4
+min_lr = 1e-6
 no_of_epochs = args.epoch
 
 def augment(X, y):
@@ -156,7 +158,7 @@ if __name__ == "__main__":
         index = False
         if MODEL_NAME == "segformer":
             model = TFSegformerForSemanticSegmentation.from_pretrained(
-                "nvidia/mit-b3",
+                MODEL_PRETRAINED_WEIGHTS,
                 num_labels=NUM_CLASSES + 1,
                 ignore_mismatched_sizes=True
                 )
@@ -168,7 +170,7 @@ if __name__ == "__main__":
                             input_shape = (None, None, 3),
                             encoder_num_heads=[1, 2, 5, 8],
                             encoder_dims=[64, 128, 320, 512],
-                            encoder_depth=[2, 2, 2, 2],
+                            encoder_depth=[3, 4, 6, 3],
                             hidden_dropout=0.0,
                             attention_dropout=0.0,
                             drop_path=0.0,
@@ -176,13 +178,17 @@ if __name__ == "__main__":
                             patch_size = [7, 3, 3, 3],
                             stride = [4, 2, 2, 2],
                             sr = [8, 4, 2, 1],
+                            deep_supervision=True,
                             activation = 'sigmoid')()   
             monitor = 'val_Dice_Coef'
             model.summary()
-            # break
+            if MODEL_PRETRAINED_WEIGHTS != "":
+                model.load_weights(MODEL_PRETRAINED_WEIGHTS, by_name=True, skip_mismatch=True)
         else:
             model = sm.Unet(MODEL_NAME, input_shape=(None, None, 3), classes=NUM_CLASSES, encoder_weights='imagenet', activation='sigmoid')
             monitor = 'val_Dice_Coef'
+            if MODEL_PRETRAINED_WEIGHTS != "":
+                model.load_weights(MODEL_PRETRAINED_WEIGHTS, by_name=True, skip_mismatch=True)
 
         loss = BceDiceLoss(spartial_axis=(1,2), class_axis=slice(0, NUM_CLASSES + 1), from_logits=from_logits, index = index)
         metrics = [DiceCoef(spartial_axis=(1,2), class_axis=slice(0, NUM_CLASSES + 1), from_logits=from_logits, index = index)]

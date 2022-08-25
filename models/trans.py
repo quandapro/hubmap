@@ -22,6 +22,7 @@ class TranSeg:
                  patch_size = [7, 3, 3, 3],
                  stride = [4, 2, 2, 2],
                  sr = [8, 4, 2, 1],
+                 deep_supervision = False,
                  activation = 'sigmoid'):
         self.input_shape = input_shape
         self.num_classes = num_classes
@@ -36,6 +37,7 @@ class TranSeg:
         self.stride = stride
         self.sr = sr
         self.activation = activation
+        self.deep_supervision = deep_supervision
 
     def encoder_block(self, inp, patch_size, stride, num_heads, kernels, depth, sr):
         # Linear convolution embedding
@@ -54,7 +56,7 @@ class TranSeg:
                 x = DropPath(self.drop_path)(x)
             x = Add()([shortcuts, x])
             
-            # MLP and skip conn
+            # # MLP and skip conn
             shortcuts = x
             x = LayerNormalization(epsilon=1e-6)(x)
             x = MLP(dims=kernels,
@@ -88,28 +90,67 @@ class TranSeg:
 
         # Linear fuse
         x    = Concatenate(axis=-1)(fuse)
-        x    = Conv2D(dim,
-                      kernel_size = (1, 1), 
-                      padding = 'same')(x)
-        x    = BatchNormalization(epsilon=1e-6)(x)
-        x    = ReLU()(x)
+        x    = ConvModule(dim, kernel_size=(1, 1), strides=1, use_bn=True, act=relu)(x)
         return x
 
-    def decoder_unet(self, inp, dims):
-        num_blocks = len(inp)
+    def decoder_custom(self, inp, num_heads, dims, sr):
+        decoder_blocks = []
+
         x = inp[0]
-        for i in range(num_blocks - 1):
-            skip_conn = inp[i + 1]
-            reshape = tf.shape(skip_conn)
-            x = tf.image.resize(x, reshape[1:3])
-            x = Concatenate(axis=-1)([x, inp[i + 1]])
-            B, H, W, C = tf.shape(x)
-            x = tf.reshape(x, (B, -1, C))
-            x = Dense(dims[i + 1])(x)
-            x = tf.reshape(x, (B, H, W, dims[i + 1]))
-            x = gelu(x)
-            x = LayerNormalization()(x)
-        return x
+        for i in range(len(inp) - 1):
+            # Get query
+            q  = inp[i + 1]
+            B_q, H, W, C_q = tf.shape(q)
+            q = tf.reshape(q, (B_q, -1, C_q))
+
+            # Get Key-value (self) then resize kv to match shape of q
+            x = tf.image.resize(x, (H, W))
+
+            # Embedding
+            x, H, W = OverlapPatchEmbeddings(1, 1, dims=dims[i + 1])(x)
+
+            # Perform Cross-Attentions where query = encoder features, key/value = segmentation map
+            shortcut = x
+            x = LayerNormalization(epsilon=1e-6)(x)
+            x = MultiHeadCrossAttention(num_heads=num_heads[i + 1], dims = dims[i + 1], sr = sr[i + 1], dropout_ratio=self.attention_dropout)(q, x, H, W)
+            x = Add()([shortcut, x])
+
+            # Apply MLP
+            shortcut = x
+            x = LayerNormalization(epsilon=1e-6)(x) 
+            x = MLP(dims[i + 1], mlp_ratio=4, dropout_ratio=self.hidden_dropout)(x, H, W)
+            x = Add()([shortcut, x])
+            
+            # Reshape x
+            x = tf.reshape(x, (-1, H, W, dims[i + 1]))
+
+            decoder_blocks.append(x)
+        
+        return decoder_blocks
+
+    def get_output(self, decoder_blocks):
+        decoder_dims = self.encoder_dims[::-1]
+        outputs = []
+        if self.deep_supervision:
+            for i in range(0, len(decoder_blocks) - 1):
+                x = LayerNormalization(epsilon=1e-6)(decoder_blocks[i]) 
+                x = ConvModule(decoder_dims[i + 1], kernel_size=(1, 1), strides=1, use_bn=True, act=relu)(x)
+                x = Conv2D(self.num_classes, 
+                            kernel_size = (1, 1), 
+                            padding = 'same')(x)
+                x = Activation(self.activation, name=f'output_{i}')(x)
+                outputs.append(x)
+
+        # Get final output
+        x = LayerNormalization(epsilon=1e-6)(decoder_blocks[-1]) 
+        x = ConvModule(decoder_dims[-1], kernel_size=(1, 1), strides=1, use_bn=True, act=relu)(x)
+        x = Conv2D(self.num_classes, 
+                    kernel_size = (1, 1), 
+                    padding = 'same')(x)
+        x = Activation(self.activation, name=f'output_final')(x)
+        outputs.append(x)
+
+        return outputs
 
     def __call__(self):       
         inp = Input(self.input_shape)
@@ -133,14 +174,14 @@ class TranSeg:
             encoder_blocks.append(x)
 
         # Decoder
-        # out = self.decoder(encoder_blocks, self.decoder_dim)
-        out = self.decoder_unet(encoder_blocks, self.encoder_dims[:-1])
+        decoder = self.decoder(encoder_blocks, self.decoder_dim)
+
+        # decoder = self.decoder_custom(encoder_blocks, self.encoder_num_heads[::-1], self.encoder_dims[::-1], self.sr[::-1])
             
-        # Final output
         out = Conv2D(self.num_classes, 
                      kernel_size = (1, 1), 
-                     padding = 'same')(out)
-        out = Activation(self.activation, name=f'output_final')(out)
+                     padding = 'same')(decoder)
+        out = Activation(self.activation, name=f'output_final')(out)    
         outputs.append(out)
         
         # Create model

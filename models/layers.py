@@ -24,6 +24,27 @@ def get_shape(tensor):
 
     return [dynamic[i] if s is None else s for i, s in enumerate(static)]
 
+class ConvModule(Layer):
+    """Conv -> Norm -> Non-linear"""
+    def __init__(self, filters, kernel_size=3, strides=1, use_bn = True, act = relu, **kwargs):
+        super().__init__(**kwargs)
+        self.conv = Conv2D(filters = filters,
+                           kernel_size=kernel_size,
+                           strides = strides,
+                           padding='same',
+                           name="conv")
+        if use_bn:
+            self.bn = BatchNormalization(name='bn_norm')
+        else:
+            self.bn = Activation('linear')
+        self.act = act
+
+    def call(self, x):
+        x = self.conv(x)
+        x = self.bn(x)
+        x = self.act(x)
+        return x
+
 class DropPath(Layer):
     """Stochastic Depth"""
     def __init__(self, drop_path, **kwargs):
@@ -48,8 +69,7 @@ class OverlapPatchEmbeddings(Layer):
                             kernel_size=patch_size, 
                             strides=stride, 
                             padding="same", 
-                            name="proj"
-        )
+                            name="proj")
 
         self.layer_norm = LayerNormalization(epsilon=1e-06, name="layer_norm")
 
@@ -92,6 +112,62 @@ class MultiHeadSelfAttention(Layer):
         key_dims  = get_shape(kv)[1]
 
         query = self.query(x)
+        query = tf.reshape(query, (-1, H*W, head_dims, self.num_heads))
+
+        key   = self.key(kv)
+        key   = tf.reshape(key, (-1, key_dims, head_dims, self.num_heads))
+
+        value = self.value(kv)
+        value = tf.reshape(value, (-1, key_dims, head_dims, self.num_heads))
+
+        heads = []
+        for i in range(self.num_heads):
+            q, k, v = query[..., i], key[..., i], value[..., i]
+            scores  = tf.matmul(q, k, transpose_b=True) / (head_dims ** 0.5) # W: N x N_k, v: N_k x C
+            weights = tf.nn.softmax(scores, axis=-1)    # W = N x C; v = C x C
+            weights = self.dropout(weights)
+            
+            head    = tf.matmul(weights, v)
+            heads.append(head)
+
+        # Concatenate heads
+        x = Concatenate(axis=-1)(heads)
+
+        # Combine heads
+        x = self.proj(x)
+        return x
+
+class MultiHeadCrossAttention(Layer):
+    """Multi Head Self Attention"""
+    def __init__(self, num_heads, dims, sr=1, dropout_ratio=0.0, **kwargs):
+        super().__init__(**kwargs)
+        self.num_heads = num_heads
+        self.dims = dims
+        self.query = Dense(dims, name="query")
+        self.key   = Dense(dims, name="key")
+        self.value = Dense(dims, name="value")
+        self.proj  = Dense(dims, name="proj")
+        self.sr_ratio = sr
+        self.dropout = Dropout(dropout_ratio)
+        if sr > 1:
+            self.sr = Conv2D(filters=dims,
+                             kernel_size=sr,
+                             strides=sr,
+                             padding='same')
+            self.layer_norm = LayerNormalization(epsilon=1e-06, name="layer_norm")
+
+    def call(self, q, kv, H, W):
+        if self.sr_ratio > 1:
+            B, N, C = get_shape(kv)
+            kv = tf.reshape(kv, (B, H, W, C))
+            kv = self.sr(kv)
+            kv = tf.reshape(kv, (B, -1, C))
+            kv = self.layer_norm(kv)
+
+        head_dims = self.dims // self.num_heads 
+        key_dims  = get_shape(kv)[1]
+
+        query = self.query(q)
         query = tf.reshape(query, (-1, H*W, head_dims, self.num_heads))
 
         key   = self.key(kv)

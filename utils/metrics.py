@@ -84,6 +84,15 @@ class BceDiceLoss:
 
         return bce_loss + dice_loss
 
+class SelfSupervisedLoss:
+    def __init__(self, name='loss'):
+        self.__name__ = name
+
+    def __call__(self, y_true, y_pred):
+        y_pred = tf.image.resize(y_pred, size=tf.shape(y_true)[1:3])
+        return mean_absolute_error(y_true, y_pred)
+        
+
 class CceDiceLoss:
     def __init__(self, spartial_axis = (1,2), class_axis = None, from_logits = False, index = False, smooth=1e-6, name='loss'):
         self.__name__ = name

@@ -13,9 +13,9 @@ from utils.image import *
     CONFIGURATION
 """
 DATA_FOLDER = "../data/train_images"
-IMAGE_SIZE = (512, 512)
+IMAGE_SIZE = (768, 768)
 DF = pd.read_csv("../data/train.csv")
-OUTPUT_FOLDER = "../data/npy_512x512"
+OUTPUT_FOLDER = "../data/npy_768x768"
 
 CLASS_MAP = {'kidney' : 1,
              'largeintestine' : 2,
